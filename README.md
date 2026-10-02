@@ -35,6 +35,39 @@ ASS는 글꼴을 포함하지 않으므로 같은 글꼴이 설치돼 있거나 
 - 개성: Single Day, Cute Font, Yeon Sung, Stylish, Diphylleia
 - 내 폰트 파일(.ttf/.otf/.woff) 추가 가능
 
+## 구글 로그인과 사용자 정보 (Firebase)
+편집은 누구나 로그인 없이 쓰고, **SRT 저장·다른 형식 저장을 누를 때** 구글 로그인을 요구합니다. 처음 로그인한 사람에게만 채널 이름(필수), 플랫폼·채널 주소(선택), 개인정보 수집 동의(필수)를 한 번 받습니다.
+
+저장되는 곳: Firestore `users/{uid}` 문서 하나
+| 필드 | 내용 |
+|---|---|
+| `uid`, `email`, `displayName` | 구글 계정 기본 정보 |
+| `channelName`, `platform`, `channelUrl` | 운영 중인 채널 (플랫폼·주소는 빈 값 가능) |
+| `consentVersion`, `consentAt` | 동의한 처리방침 버전과 시각 |
+| `createdAt`, `lastLoginAt` | 가입 시각, 마지막 접속 시각 |
+
+관련 파일: `auth.js`(로그인·가입 화면), `firebase-config.js`(설정값), `firestore.rules`(접근 규칙), `privacy.html`(개인정보 처리방침).
+`firebase-config.js`의 `apiKey`가 비어 있으면 로그인 기능이 꺼지고 예전처럼 동작합니다. 파일로 직접 연 경우(`file://`)도 구글 로그인이 불가능해서 꺼집니다.
+
+### Firebase 콘솔에서 할 일 (처음 한 번)
+1. [console.firebase.google.com](https://console.firebase.google.com) → **프로젝트 추가** → 이름 입력 (Google 애널리틱스는 꺼도 됩니다).
+2. **Build → Authentication → 시작하기 → Sign-in method → Google → 사용 설정** → 프로젝트 지원 이메일 선택 → 저장.
+3. **Authentication → Settings → 승인된 도메인 → 도메인 추가** → Netlify 주소(예: `내사이트.netlify.app`)를 넣습니다. 커스텀 도메인을 쓰면 그 도메인도 추가합니다. `localhost`는 기본으로 들어 있습니다.
+4. **Build → Firestore Database → 데이터베이스 만들기** → 위치는 `asia-northeast3 (서울)` 추천(나중에 못 바꿈) → **프로덕션 모드**로 시작.
+5. Firestore → **규칙** 탭 → 내용을 모두 지우고 이 저장소의 `firestore.rules` 내용을 붙여 넣은 뒤 **게시**.
+6. **프로젝트 설정(톱니바퀴) → 일반 → 내 앱 → 웹(`</>`) 앱 추가** → 앱 이름 입력 (Hosting 체크는 하지 않음) → 화면에 나오는 `firebaseConfig`의 6개 값을 `firebase-config.js`에 붙여 넣고 커밋합니다.
+7. `privacy.html`에서 노란색으로 표시된 3곳(Firestore 위치, 운영자 이름, 문의 이메일)을 채워 넣고 커밋합니다.
+
+`firebase-config.js`의 값은 원래 공개되는 웹 설정이라 저장소에 올려도 됩니다. 데이터 보호는 5번의 규칙이 맡습니다. **서비스 계정 키(.json)는 절대 저장소에 넣지 마세요.**
+
+### 가입자 보기
+Firestore → **데이터** 탭 → `users` 컬렉션에서 한 명씩 볼 수 있습니다. 규칙상 앱 안에서는 본인 정보만 보이고 목록 조회는 막혀 있어서, 전체 목록은 콘솔(운영자 권한)에서만 볼 수 있습니다. 콘솔에는 CSV 내보내기 버튼이 없어서, 명단을 파일로 받으려면 별도 스크립트(서비스 계정 사용)나 BigQuery 내보내기가 필요합니다.
+
+### 알아둘 점
+- 로그인 확인은 브라우저에서 하므로 개발자 도구로 우회할 수 있습니다. 이 기능은 **사용자 명단 수집용**이지 유료 기능 잠금 같은 보안 장치가 아닙니다.
+- Netlify 배포 미리보기 주소(`deploy-preview-N--...netlify.app`)는 승인된 도메인이 아니라서 로그인 팝업이 실패합니다. 미리보기에서도 시험하려면 그 주소를 3번처럼 추가합니다.
+- 규칙을 CLI로 올리려면 `npx firebase-tools deploy --only firestore:rules --project <프로젝트ID>` (`firebase.json` 포함).
+
 ## 단축키
 Space 재생/정지 · ↑↓ 줄 이동 (Shift로 범위 선택) · Ctrl+Z 되돌리기 · Delete 선택 줄 삭제
 

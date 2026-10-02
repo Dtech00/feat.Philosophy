@@ -850,12 +850,15 @@ function openExport() {
     if (ex) saveFile(`${nm}.${ext}`, text); else copyText(text);
   });
 }
+// 저장 전 로그인 확인 (auth.js). 로그인 기능이 꺼져 있거나 못 불러오면 그대로 통과
+const loginGate = async () => (window.subfxAuth ? window.subfxAuth.ensure() : true);
 $('#bExport').onclick = async () => {
   if (!state.lines.length) return toast('저장할 자막이 없어요');
+  if (!(await loginGate())) return;
   const nm = (state.name || '자막').replace(/[\\/:*?"<>|]/g, '_');
   saveFile(`${nm}.srt`, await buildFxSrt(!!store.get('subfx.srtTags')));
 };
-$('#bMore').onclick = () => { if (!state.lines.length) return toast('저장할 자막이 없어요'); openExport(); };
+$('#bMore').onclick = async () => { if (!state.lines.length) return toast('저장할 자막이 없어요'); if (await loginGate()) openExport(); };
 
 /* ---------- 불러오기 ---------- */
 async function loadSrtText(txt, name) {

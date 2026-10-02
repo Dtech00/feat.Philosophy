@@ -1,0 +1,42 @@
+rules_version = '2';
+// 사용자 문서는 users/{uid} 하나. 본인만 만들고 읽고 고치고 지울 수 있고, 다른 사람 문서와 목록 조회는 막는다.
+// 운영자는 Firebase 콘솔(관리자 권한)에서 전체를 보며, 콘솔 접근은 이 규칙의 영향을 받지 않는다.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid} {
+      function isOwner() {
+        return request.auth != null && request.auth.uid == uid;
+      }
+      function validProfile(d) {
+        return d.keys().hasOnly(['uid', 'email', 'displayName', 'channelName', 'channelUrl', 'platform',
+                                 'consentVersion', 'consentAt', 'createdAt', 'lastLoginAt'])
+          && d.uid == uid
+          && d.email == request.auth.token.email
+          && d.displayName is string && d.displayName.size() <= 100
+          && d.channelName is string && d.channelName.size() >= 1 && d.channelName.size() <= 100
+          && d.channelUrl is string && d.channelUrl.size() <= 300
+          && (d.channelUrl == '' || d.channelUrl.matches('https?://.+'))
+          && d.platform in ['youtube', 'instagram', 'tiktok', 'chzzk', 'afreeca', 'naver', 'other', '']
+          && d.consentVersion is string && d.consentVersion.size() <= 20
+          && d.consentAt is timestamp
+          && d.createdAt is timestamp
+          && d.lastLoginAt is timestamp;
+      }
+
+      allow get: if isOwner();
+      allow list: if false;
+      allow create: if isOwner()
+        && validProfile(request.resource.data)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.consentAt == request.time
+        && request.resource.data.lastLoginAt == request.time;
+      allow update: if isOwner()
+        && validProfile(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.uid == resource.data.uid
+        && (request.resource.data.consentAt == resource.data.consentAt || request.resource.data.consentAt == request.time)
+        && request.resource.data.lastLoginAt == request.time;
+      allow delete: if isOwner();
+    }
+  }
+}
