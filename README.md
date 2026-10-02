@@ -49,6 +49,8 @@ ASS는 글꼴을 포함하지 않으므로 같은 글꼴이 설치돼 있거나 
 관련 파일: `auth.js`(로그인·가입 화면), `firebase-config.js`(설정값), `firestore.rules`(접근 규칙), `privacy.html`(개인정보 처리방침).
 `firebase-config.js`의 `apiKey`가 비어 있으면 로그인 기능이 꺼지고 예전처럼 동작합니다. 파일로 직접 연 경우(`file://`)도 구글 로그인이 불가능해서 꺼집니다.
 
+현재 연결할 Firebase 프로젝트: `feat-philosophy` (Firestore 위치 `asia-northeast3` 서울, 승인된 도메인 `grand-malasada-773d11.netlify.app`). 콘솔 쪽 1~5번은 완료됐습니다. 새 프로젝트로 옮기거나 도메인을 바꿀 때 아래 순서를 다시 따릅니다.
+
 ### Firebase 콘솔에서 할 일 (처음 한 번)
 1. [console.firebase.google.com](https://console.firebase.google.com) → **프로젝트 추가** → 이름 입력 (Google 애널리틱스는 꺼도 됩니다).
 2. **Build → Authentication → 시작하기 → Sign-in method → Google → 사용 설정** → 프로젝트 지원 이메일 선택 → 저장.
@@ -56,7 +58,7 @@ ASS는 글꼴을 포함하지 않으므로 같은 글꼴이 설치돼 있거나 
 4. **Build → Firestore Database → 데이터베이스 만들기** → 위치는 `asia-northeast3 (서울)` 추천(나중에 못 바꿈) → **프로덕션 모드**로 시작.
 5. Firestore → **규칙** 탭 → 내용을 모두 지우고 이 저장소의 `firestore.rules` 내용을 붙여 넣은 뒤 **게시**.
 6. **프로젝트 설정(톱니바퀴) → 일반 → 내 앱 → 웹(`</>`) 앱 추가** → 앱 이름 입력 (Hosting 체크는 하지 않음) → 화면에 나오는 `firebaseConfig`의 6개 값을 `firebase-config.js`에 붙여 넣고 커밋합니다.
-7. `privacy.html`에서 노란색으로 표시된 3곳(Firestore 위치, 운영자 이름, 문의 이메일)을 채워 넣고 커밋합니다.
+7. `privacy.html`에서 노란색으로 표시된 곳(운영자 이름, 문의 이메일, 다른 위치를 골랐다면 Firestore 위치)을 채워 넣고 커밋합니다.
 
 `firebase-config.js`의 값은 원래 공개되는 웹 설정이라 저장소에 올려도 됩니다. 데이터 보호는 5번의 규칙이 맡습니다. **서비스 계정 키(.json)는 절대 저장소에 넣지 마세요.**
 
