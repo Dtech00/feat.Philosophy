@@ -7,7 +7,7 @@ service cloud.firestore {
     // ===== 관리자 이메일 목록 (admin.html의 ADMIN_EMAILS와 같게 유지) =====
     // 구글 계정 이메일을 소문자로 넣는다. 바꾼 뒤 Firebase 콘솔 → Firestore → 규칙에 다시 게시해야 적용된다.
     function adminEmails() {
-      return ['REPLACE_WITH_ADMIN_EMAIL'];
+      return ['wns0255@nate.com'];
     }
     function isAdmin() {
       return request.auth != null
