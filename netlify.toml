@@ -1,0 +1,9 @@
+# 빌드 과정 없는 정적 사이트. 저장소 루트를 그대로 배포한다.
+[build]
+  publish = "."
+  command = ""
+
+[[headers]]
+  for = "/fonts/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
