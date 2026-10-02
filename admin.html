@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>가입자 관리 · 자막 이펙터</title>
+<style>
+@font-face{font-family:"Pretendard";font-weight:45 920;font-style:normal;font-display:swap;src:url("fonts/PretendardVariable.woff2") format("woff2")}
+:root{--bg:#0A0C0C;--panel:#111514;--panel-2:#171C1B;--panel-3:#1F2625;--line:#25302E;--fg:#E8F1EF;--muted:#8C9C99;--accent:#A0FFEC;--accent-ink:#03241E;--danger:#FF7A7A;--r:8px;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 "Pretendard",-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
+button,input{font:inherit;color:inherit}
+header{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+header h1{margin:0 auto 0 0;font-size:17px}
+header h1 i{font-style:normal;color:var(--accent)}
+.who{color:var(--muted);font-size:12.5px}
+.btn{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px;border-radius:var(--r);border:1px solid var(--line);background:var(--panel-2);font-weight:600;font-size:13px;cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--panel-3)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn:disabled{opacity:.5;cursor:default}
+main{padding:16px;max-width:1400px;margin:0 auto}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.bar input{height:34px;border:1px solid var(--line);background:var(--panel-2);border-radius:var(--r);padding:0 12px;min-width:0;flex:1 1 220px;max-width:360px}
+.stats{color:var(--muted);font-size:13px;margin-right:auto}
+.stats b{color:var(--fg)}
+.wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+table{border-collapse:collapse;width:100%;min-width:900px;font-size:13px}
+th,td{padding:9px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{background:var(--panel);position:sticky;top:0;white-space:nowrap;cursor:pointer;user-select:none;color:var(--muted);font-weight:600}
+th[aria-sort=ascending]::after{content:" ▲";color:var(--accent)}
+th[aria-sort=descending]::after{content:" ▼";color:var(--accent)}
+tbody tr:hover{background:var(--panel-2)}
+td.t{font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--muted)}
+td a{color:var(--accent);overflow-wrap:anywhere}
+.msg{padding:40px 16px;text-align:center;color:var(--muted)}
+.msg.err{color:var(--danger)}
+.gate{max-width:420px;margin:60px auto;padding:24px;border:1px solid var(--line);border-radius:12px;background:var(--panel);display:grid;gap:12px;text-align:center}
+.gate p{margin:0;color:var(--muted)}
+</style></head><body>
+<header><h1>자막 <i>이펙터</i> · 가입자</h1><span class="who" id="who"></span><span id="authBtn"></span></header>
+<main id="main"><div class="msg">불러오는 중…</div></main>
+<script type="module">
+import { firebaseConfig } from './firebase-config.js';
+
+// ===== 관리자 이메일 목록 (firestore.rules의 adminEmails()와 같게 유지) =====
+// 화면 안내용일 뿐이고, 실제로 목록을 읽을 수 있는지는 firestore.rules가 결정한다.
+const ADMIN_EMAILS = ['REPLACE_WITH_ADMIN_EMAIL'];
+
+const SDK = 'https://www.gstatic.com/firebasejs/10.14.1/';
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const PLATFORM = { youtube: '유튜브', instagram: '인스타그램', tiktok: '틱톡', chzzk: '치지직', afreeca: 'SOOP(아프리카TV)', naver: '네이버 클립·블로그', other: '기타', '': '' };
+const COLS = [
+  ['createdAt', '가입일'], ['lastLoginAt', '마지막 접속'], ['channelName', '채널'], ['platform', '플랫폼'],
+  ['channelUrl', '채널 주소'], ['displayName', '이름'], ['email', '이메일']
+];
+const pad = n => String(n).padStart(2, '0');
+const fmt = ms => { if (!ms) return ''; const d = new Date(ms); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const safeUrl = u => /^https?:\/\//i.test(u || '') ? u : '';
+
+if (!firebaseConfig.apiKey) {
+  $('#main').innerHTML = '<div class="msg err">firebase-config.js에 설정값이 없어요.</div>';
+} else {
+  const [{ initializeApp }, A, F] = await Promise.all([
+    import(SDK + 'firebase-app.js'), import(SDK + 'firebase-auth.js'), import(SDK + 'firebase-firestore.js')
+  ]);
+  const app = initializeApp(firebaseConfig);
+  const auth = A.getAuth(app), db = F.getFirestore(app);
+  const provider = new A.GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
+
+  let rows = [], sortKey = 'createdAt', sortDir = -1, q = '';
+
+  const gate = (text, btn) => {
+    $('#main').innerHTML = `<div class="gate"><p>${text}</p>${btn ? '<button class="btn primary" id="gLogin">구글 계정으로 로그인</button>' : ''}</div>`;
+    if (btn) $('#gLogin').onclick = login;
+  };
+  async function login() {
+    try { await A.signInWithPopup(auth, provider); }
+    catch (e) { if (e && e.code !== 'auth/popup-closed-by-user' && e.code !== 'auth/cancelled-popup-request') gate('로그인하지 못했어요: ' + esc(e.code || e.message), true); }
+  }
+
+  function view() {
+    const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const list = rows.filter(r => !words.length || words.every(w => r._hay.includes(w)))
+      .sort((a, b) => { const x = a[sortKey], y = b[sortKey]; return (x > y ? 1 : x < y ? -1 : 0) * sortDir; });
+    return list;
+  }
+  function render() {
+    const list = view();
+    const week = Date.now() - 7 * 864e5;
+    $('#stats').innerHTML = `전체 <b>${rows.length}</b>명 · 최근 7일 가입 <b>${rows.filter(r => r.createdAt >= week).length}</b>명 · 최근 7일 접속 <b>${rows.filter(r => r.lastLoginAt >= week).length}</b>명${q ? ` · 검색 결과 <b>${list.length}</b>명` : ''}`;
+    $('thead tr').innerHTML = COLS.map(([k, t]) => `<th data-k="${k}"${k === sortKey ? ` aria-sort="${sortDir > 0 ? 'ascending' : 'descending'}"` : ''}>${t}</th>`).join('');
+    $('tbody').innerHTML = list.length ? list.map(r => `<tr>
+      <td class="t">${fmt(r.createdAt)}</td><td class="t">${fmt(r.lastLoginAt)}</td>
+      <td>${esc(r.channelName)}</td><td>${esc(PLATFORM[r.platform] ?? r.platform)}</td>
+      <td>${safeUrl(r.channelUrl) ? `<a href="${esc(r.channelUrl)}" target="_blank" rel="noopener noreferrer">${esc(r.channelUrl)}</a>` : ''}</td>
+      <td>${esc(r.displayName)}</td><td>${esc(r.email)}</td></tr>`).join('')
+      : `<tr><td colspan="${COLS.length}" class="msg">${rows.length ? '검색 결과가 없어요' : '아직 가입자가 없어요'}</td></tr>`;
+  }
+  function csv() {
+    const cell = v => { let s = String(v ?? ''); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+    const head = [...COLS.map(c => c[1]), '동의 버전', '동의 시각', 'UID'];
+    const body = view().map(r => [fmt(r.createdAt), fmt(r.lastLoginAt), r.channelName, PLATFORM[r.platform] ?? r.platform, r.channelUrl, r.displayName, r.email, r.consentVersion, fmt(r.consentAt), r.uid]);
+    const text = '﻿' + [head, ...body].map(l => l.map(cell).join(',')).join('\r\n');
+    const d = new Date();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
+    a.download = `가입자_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}.csv`;
+    document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+  }
+
+  async function load() {
+    $('#main').innerHTML = `<div class="bar"><span class="stats" id="stats"></span><input type="search" id="q" placeholder="채널·이름·이메일 검색" aria-label="검색"><button class="btn" id="reload">새로고침</button><button class="btn primary" id="dl">CSV 받기</button></div>
+      <div class="wrap"><table><thead><tr></tr></thead><tbody><tr><td class="msg" colspan="${COLS.length}">불러오는 중…</td></tr></tbody></table></div>`;
+    $('#q').oninput = e => { q = e.target.value; render(); };
+    $('#reload').onclick = load;
+    $('#dl').onclick = csv;
+    $('thead').onclick = e => { const k = e.target.closest('th')?.dataset.k; if (!k) return; sortDir = k === sortKey ? -sortDir : (k.endsWith('At') ? -1 : 1); sortKey = k; render(); };
+    try {
+      const snap = await F.getDocs(F.collection(db, 'users'));
+      const ms = t => (t && t.toMillis ? t.toMillis() : 0);
+      rows = snap.docs.map(d => {
+        const v = d.data();
+        const r = { ...v, uid: v.uid || d.id, createdAt: ms(v.createdAt), lastLoginAt: ms(v.lastLoginAt), consentAt: ms(v.consentAt) };
+        r._hay = [r.channelName, r.displayName, r.email, r.channelUrl, PLATFORM[r.platform]].join(' ').toLowerCase();
+        return r;
+      });
+      render();
+    } catch (e) {
+      console.error(e);
+      gate(e && e.code === 'permission-denied'
+        ? '이 계정은 가입자 목록을 볼 권한이 없어요. firestore.rules의 관리자 이메일 목록에 있는 계정으로 로그인하세요.'
+        : '목록을 불러오지 못했어요: ' + esc(e.code || e.message), false);
+    }
+  }
+
+  A.onAuthStateChanged(auth, u => {
+    $('#who').textContent = u ? u.email : '';
+    $('#authBtn').innerHTML = u ? '<button class="btn" id="out">로그아웃</button>' : '';
+    if (u) $('#out').onclick = () => A.signOut(auth);
+    if (!u) return gate('관리자 계정으로 로그인하세요.', true);
+    if (!ADMIN_EMAILS.includes((u.email || '').toLowerCase())) return gate(`${esc(u.email)} 계정은 관리자 목록에 없어요.`, false);
+    load();
+  });
+}
+</script>
+</body></html>

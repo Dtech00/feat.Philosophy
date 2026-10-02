@@ -1,8 +1,20 @@
 rules_version = '2';
-// 사용자 문서는 users/{uid} 하나. 본인만 만들고 읽고 고치고 지울 수 있고, 다른 사람 문서와 목록 조회는 막는다.
-// 운영자는 Firebase 콘솔(관리자 권한)에서 전체를 보며, 콘솔 접근은 이 규칙의 영향을 받지 않는다.
+// 사용자 문서는 users/{uid} 하나. 본인만 만들고 읽고 고치고 지울 수 있다.
+// 목록 조회는 아래 관리자 이메일로 로그인한 경우(admin.html)에만 허용하고, 관리자도 남의 문서를 고치거나 지울 수는 없다.
+// Firebase 콘솔 접근은 이 규칙의 영향을 받지 않는다.
 service cloud.firestore {
   match /databases/{database}/documents {
+    // ===== 관리자 이메일 목록 (admin.html의 ADMIN_EMAILS와 같게 유지) =====
+    // 구글 계정 이메일을 소문자로 넣는다. 바꾼 뒤 Firebase 콘솔 → Firestore → 규칙에 다시 게시해야 적용된다.
+    function adminEmails() {
+      return ['REPLACE_WITH_ADMIN_EMAIL'];
+    }
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.lower() in adminEmails();
+    }
+
     match /users/{uid} {
       function isOwner() {
         return request.auth != null && request.auth.uid == uid;
@@ -23,8 +35,9 @@ service cloud.firestore {
           && d.lastLoginAt is timestamp;
       }
 
-      allow get: if isOwner();
-      allow list: if false;
+      // 본인은 자기 문서만, 관리자는 전체 조회(읽기 전용)
+      allow get: if isOwner() || isAdmin();
+      allow list: if isAdmin();
       allow create: if isOwner()
         && validProfile(request.resource.data)
         && request.resource.data.createdAt == request.time
