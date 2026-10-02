@@ -10,5 +10,9 @@ export const firebaseConfig = {
   appId: '1:1041383862040:web:94947edbf6569a86fe786d'
 };
 
+// 로그인을 언제 요구할지. 'app' = 접속하면 바로 로그인과 가입 정보 입력을 마쳐야 앱을 쓸 수 있음,
+// 'save' = 편집은 누구나, 저장할 때만 로그인. 이 한 줄만 바꾸면 됩니다.
+export const LOGIN_GATE = 'app';
+
 // 개인정보 처리방침 문구가 바뀌면 숫자를 올립니다. 동의 기록에 함께 저장됩니다.
 export const CONSENT_VERSION = '2026-10-02';

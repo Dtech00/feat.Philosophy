@@ -1,7 +1,14 @@
 // 구글 로그인 + 사용자 정보(어떤 채널을 운영하는지) 저장.
-// 편집은 누구나, 저장(내보내기)할 때만 로그인과 최초 1회 가입 정보를 요구한다.
+// LOGIN_GATE(firebase-config.js)가 'app'이면 로그인과 최초 1회 가입 정보 입력을 마쳐야 편집기가 보이고,
+// 'save'면 편집은 누구나 하고 저장(내보내기)할 때만 요구한다.
 // app.js는 window.subfxAuth.ensure()가 true를 돌려줄 때만 저장을 진행한다.
-import { firebaseConfig, CONSENT_VERSION } from './firebase-config.js';
+// index.html은 <html class="auth-wait">로 시작해 편집기를 가려 두고, 여기서 통과시킬 때 reveal()로 연다.
+import * as cfg from './firebase-config.js';
+
+const { firebaseConfig, CONSENT_VERSION } = cfg;
+const GATE = cfg.LOGIN_GATE === 'app' ? 'app' : 'save';
+window.subfxAuthStarting = true;
+const reveal = () => document.documentElement.classList.remove('auth-wait');
 
 const SDK = 'https://www.gstatic.com/firebasejs/10.14.1/';
 const $ = (s, r = document) => r.querySelector(s);
@@ -20,12 +27,14 @@ function toast(msg, ms) {
 // 설정값이 비어 있거나 파일로 직접 연 경우(file://, 구글 로그인 불가)는 로그인 없이 동작
 if (!firebaseConfig.apiKey || location.protocol === 'file:') {
   window.subfxAuth = { enabled: false, ensure: async () => true };
+  reveal();
 } else {
   try { await start(); }
   catch (err) {
-    // SDK를 받지 못하면(네트워크 차단 등) 저장을 막지 않는다
+    // SDK를 받지 못하면(네트워크 차단 등) 앱을 잠그지 않는다
     console.warn('[subfx] 로그인 기능을 불러오지 못했습니다', err);
     window.subfxAuth = { enabled: false, ensure: async () => true };
+    reveal();
   }
 }
 
@@ -40,7 +49,8 @@ async function start() {
   const provider = new A.GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
 
-  let user = null, profile = null, touched = false;
+  let user = null, profile = null, touched = false, revealed = false, signupOpen = false;
+  if (GATE === 'save') { reveal(); revealed = true; }
   const ref = uid => F.doc(db, 'users', uid);
 
   async function loadProfile() {
@@ -118,12 +128,12 @@ async function start() {
   }
 
   // prev가 있으면 수정, 없으면 최초 가입
-  function profileDialog(prev) {
+  function profileDialog(prev, required) {
     return new Promise(resolve => {
       const first = !prev;
       const p = prev || { channelName: '', channelUrl: '', platform: '' };
       const m = dialog(`
-        <header><h2>${first ? '처음 한 번만 알려 주세요' : '내 정보'}</h2><button class="btn sm ghost" data-x>${first ? '나중에' : '닫기'}</button></header>
+        <header><h2>${first ? '처음 한 번만 알려 주세요' : '내 정보'}</h2><button class="btn sm ghost" data-x>${required ? '로그아웃' : first ? '나중에' : '닫기'}</button></header>
         <div></div>
         <form class="body auth-body" novalidate>
           <div class="who">${user.photoURL ? `<img src="${esc(user.photoURL)}" alt="" referrerpolicy="no-referrer">` : ''}<div><b>${esc(user.displayName || '')}</b><span>${esc(user.email || '')}</span></div></div>
@@ -134,14 +144,14 @@ async function start() {
             <table><tr><th>받는 정보</th><td>구글 계정 이메일·이름, 채널 이름, (선택) 플랫폼·채널 주소, 동의 시각</td></tr>
             <tr><th>쓰는 곳</th><td>서비스 이용자 파악, 공지·업데이트 안내</td></tr>
             <tr><th>보관 기간</th><td>탈퇴할 때까지. 탈퇴하면 바로 지워요</td></tr></table>
-            <p>동의하지 않을 수 있지만, 그 경우 저장 기능은 쓸 수 없어요(편집은 그대로 가능). 자세한 내용은 <a href="privacy.html" target="_blank" rel="noopener">개인정보 처리방침</a>에 있어요.</p>
+            <p>동의하지 않을 수 있지만, 그 경우 ${GATE === 'app' ? '앱을 쓸 수 없어요' : '저장 기능은 쓸 수 없어요(편집은 그대로 가능)'}. 자세한 내용은 <a href="privacy.html" target="_blank" rel="noopener">개인정보 처리방침</a>에 있어요.</p>
             <label class="chk"><input type="checkbox" name="agree" required> 개인정보 수집·이용에 동의합니다 <em>필수</em></label>
           </div>` : ''}
           <p class="err" data-err hidden></p>
-          <div class="acts"><button class="btn primary" type="submit">${first ? '가입하고 저장하기' : '저장'}</button></div>
+          <div class="acts"><button class="btn primary" type="submit">${first ? (GATE === 'app' ? '가입하고 시작하기' : '가입하고 저장하기') : '저장'}</button></div>
         </form>`, first ? '가입 정보 입력' : '내 정보');
       const done = v => { m.remove(); resolve(v); };
-      m.addEventListener('click', e => { if (e.target === m || e.target.closest('[data-x]')) done(false); });
+      m.addEventListener('click', e => { if ((e.target === m && !required) || e.target.closest('[data-x]')) done(false); });
       const f = m.querySelector('form');
       const err = t => { const el = m.querySelector('[data-err]'); el.hidden = !t; el.textContent = t || ''; };
       f.channelName.focus();
@@ -150,7 +160,7 @@ async function start() {
         const channelName = f.channelName.value.trim(), channelUrl = f.channelUrl.value.trim(), platform = f.platform.value;
         if (!channelName) { f.channelName.focus(); return err('채널 이름을 적어 주세요.'); }
         if (channelUrl && !/^https?:\/\/\S+$/i.test(channelUrl)) { f.channelUrl.focus(); return err('채널 주소는 https://로 시작하는 주소로 적어 주세요.'); }
-        if (first && !f.agree.checked) return err('개인정보 수집·이용에 동의해야 저장할 수 있어요.');
+        if (first && !f.agree.checked) return err(GATE === 'app' ? '개인정보 수집·이용에 동의해야 시작할 수 있어요.' : '개인정보 수집·이용에 동의해야 저장할 수 있어요.');
         err(''); const sb = f.querySelector('[type=submit]'); sb.disabled = true;
         const base = { uid: user.uid, email: user.email || '', displayName: (user.displayName || '').slice(0, 100), channelName, channelUrl, platform, lastLoginAt: F.serverTimestamp() };
         try {
@@ -208,10 +218,60 @@ async function start() {
     }
   }
 
+  /* ---------- 로그인 벽 (GATE === 'app') ---------- */
+  function wall(state) {
+    const w = $('#authWall'); if (!w) return;
+    const card = w.querySelector('.aw-body');
+    if (state === 'login') {
+      card.innerHTML = `<p>자막 이펙터는 <b>구글 로그인</b> 후 쓸 수 있어요.</p>
+        <p class="muted">처음 한 번만 운영 중인 채널 이름을 받아요. 받는 정보: 구글 이메일·이름, 채널 이름, (선택) 플랫폼·채널 주소. 탈퇴하면 바로 지워요.</p>
+        <button class="btn primary gbtn" data-go>${G_ICON}Google 계정으로 시작하기</button>
+        <p class="err" data-err hidden></p>
+        <p class="muted"><a href="privacy.html" target="_blank" rel="noopener">개인정보 처리방침</a></p>`;
+      const go = card.querySelector('[data-go]');
+      go.onclick = async () => {
+        go.disabled = true;
+        try { await A.signInWithPopup(auth, provider); }   // 이후 흐름은 onAuthStateChanged가 이어 간다
+        catch (err) {
+          go.disabled = false;
+          if (err && (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request')) return;
+          const el = card.querySelector('[data-err]'); el.hidden = false;
+          el.textContent = err && err.code === 'auth/popup-blocked' ? '팝업이 차단됐어요. 주소창의 팝업 차단을 풀고 다시 눌러 주세요.'
+            : err && err.code === 'auth/unauthorized-domain' ? '이 주소는 로그인 허용 도메인에 없어요. 운영자에게 알려 주세요.'
+            : '로그인하지 못했어요. 다시 눌러 주세요.';
+          console.error(err);
+        }
+      };
+      go.focus();
+    } else if (state === 'error') {
+      card.innerHTML = `<p class="err">계정 정보를 불러오지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.</p>
+        <div class="acts"><button class="btn" data-out>로그아웃</button><button class="btn primary" data-retry>다시 시도</button></div>`;
+      card.querySelector('[data-retry]').onclick = () => location.reload();
+      card.querySelector('[data-out]').onclick = () => A.signOut(auth);
+    } else {
+      card.innerHTML = `<p class="muted">가입 정보를 입력해 주세요.</p>`;
+    }
+  }
+
+  async function gateApp(loadFailed) {
+    if (user && profile) { reveal(); revealed = true; return; }
+    if (revealed) { location.reload(); return; }   // 쓰던 중 로그아웃·탈퇴하면 처음 화면으로
+    if (!user) return wall('login');
+    if (loadFailed) return wall('error');
+    if (signupOpen) return;
+    signupOpen = true; wall('signup');
+    const ok = await profileDialog(null, true);
+    signupOpen = false;
+    if (ok) { renderSlot(); reveal(); revealed = true; }
+    else await A.signOut(auth);
+  }
+
   A.onAuthStateChanged(auth, async u => {
     user = u; profile = null; touched = false;
     renderSlot();
-    if (u) { try { await loadProfile(); } catch (e) { console.warn(e); } renderSlot(); }
+    let failed = false;
+    if (u) { try { await loadProfile(); } catch (e) { console.warn(e); failed = true; } renderSlot(); }
+    if (GATE === 'app') gateApp(failed);
   });
 
   window.subfxAuth = { enabled: true, ensure };
